@@ -64,6 +64,7 @@ class ViewController: NSViewController {
     private lazy var filePathArray = [String]()
     private lazy var superClassArray = [String]()
     private lazy var classNameArray = [String]()
+    private lazy var classInFileMap = [String:String]()//类所在的文件信息
     
     private lazy var noReferenceImageNameArray = [String]()
     private let fileManager = FileManager.default
@@ -162,7 +163,7 @@ class ViewController: NSViewController {
             progressLabel.stringValue = "扫描之前，需要计算统计项目所有的类，马上开始别着急请耐心等待一小会........^_^"
             DispatchQueue.global().async(execute: {
                 let directoryFileNameArray = try! self.fileManager.contentsOfDirectory(atPath: self.directoryText.stringValue)
-                self.startCalculateAllClass(directoryFileNameArray, path: self.directoryText.stringValue)
+                self.startCalculateAllClass(directoryFileNameArray, path: self.directoryText.stringValue, rootPath: self.directoryText.stringValue)
                 let classCount = self.classNameArray.count
                 DispatchQueue.main.async {
                     self.classCountLabel.stringValue = "项目所有的类: 总计\(classCount)个"
@@ -411,7 +412,7 @@ class ViewController: NSViewController {
         return classNames
     }
     
-    private func startCalculateAllClass(_ directoryFileNameArray :[String]!, path: String!) {
+    private func startCalculateAllClass(_ directoryFileNameArray :[String]!, path: String!, rootPath: String!) {
         autoreleasepool {
             if directoryFileNameArray != nil {
                 for (_, fileName) in directoryFileNameArray.enumerated() {
@@ -421,18 +422,30 @@ class ViewController: NSViewController {
                     let exist = fileManager.fileExists(atPath: pathName, isDirectory: &isDirectory)
                     if exist && isDirectory.boolValue {
                         let tempDirectoryFileNameArray = try! fileManager.contentsOfDirectory(atPath: pathName)
-                        startCalculateAllClass(tempDirectoryFileNameArray, path: pathName)
+                        startCalculateAllClass(tempDirectoryFileNameArray, path: pathName, rootPath: rootPath)
                     }else {
                         switch scanProjectType {
                             case .android:
                                 if fileName.hasSuffix(".java") && fileName != "R.java" && fileName != "BuildConfig.java" {
                                     filePathArray.append(pathName)
-                                    classNameArray.append(contentsOf: analysisEngineClassName(path: pathName, file: fileName))
+                                    let classArray = analysisEngineClassName(path: pathName, file: fileName)
+                                    classNameArray.append(contentsOf: classArray)
+                                    
+                                    let pathFileName = String(pathName.suffix(pathName.count - rootPath.count - 1))
+                                    classArray .forEach { (className) in
+                                        classInFileMap.updateValue(pathFileName, forKey: className)
+                                    }
                                 }
                             case .iOS:
                                 if fileName.hasSuffix(".swift") || fileName.hasSuffix(".m") {
                                     filePathArray.append(pathName)
-                                    classNameArray.append(contentsOf: analysisEngineClassName(path: pathName, file: fileName))
+                                    let classArray = analysisEngineClassName(path: pathName, file: fileName)
+                                    classNameArray.append(contentsOf: classArray)
+                                    
+                                    let pathFileName = String(pathName.suffix(pathName.count - rootPath.count - 1))
+                                    classArray .forEach { (className) in
+                                        classInFileMap.updateValue(pathFileName, forKey: className)
+                                    }
                                 }else if fileName.hasSuffix(".h") {
                                     autoreleasepool {
                                         let contentData = try! Data(contentsOf: URL(fileURLWithPath: pathName), options: NSData.ReadingOptions.mappedIfSafe);
@@ -621,7 +634,11 @@ class ViewController: NSViewController {
                 DispatchQueue.main.sync(execute: {
                     self.notUseClassCount += 1
                     let originTxt = self.notUseClassResultContentView.string.count == 0 ? "" : self.notUseClassResultContentView.string
-                    self.setNotUseResultContent(content: originTxt + ">>>>> " + className + "\n")
+                    
+                    let unUsedFile = classInFileMap[className]
+                    let unUsedContent = String(format:"%@ %@\n", className.withCString {String(format: "%-60s", $0)}, unUsedFile!)
+                    
+                    self.setNotUseResultContent(content: originTxt + unUsedContent)
                     self.notUseClassCountLabel.stringValue = "项目没使用的类: 总计\(self.notUseClassCount)个"
                 })
             }
